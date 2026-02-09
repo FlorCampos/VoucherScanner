@@ -87,7 +87,7 @@ if foto:
             {
               "comercio": "nombre del lugar",
               "fecha": "DD/MM/AAAA",
-              "mes_texto": "Nombre del Mes",
+              "mes_texto": "Month name in English", # <-- Instrucción para inglés
               "monto_total": 0.0,
               "iva": 0.0,
               "categoria_sugerida": "ej: Comida, Transporte, etc."
