@@ -37,6 +37,7 @@ def guardar_en_google_sheets(datos_json):
         fila = [
             str(datos_json.get("comercio", "N/A")),
             str(datos_json.get("fecha", "N/A")),
+            str(datos_json.get("mes_texto", "N/A")), # <-- Nueva columna
             float(datos_json.get("monto_total", 0)),
             float(datos_json.get("iva", 0)),
             str(datos_json.get("categoria_sugerida", "Otros"))
@@ -86,6 +87,7 @@ if foto:
             {
               "comercio": "nombre del lugar",
               "fecha": "DD/MM/AAAA",
+              "mes_texto": "Nombre del Mes",
               "monto_total": 0.0,
               "iva": 0.0,
               "categoria_sugerida": "ej: Comida, Transporte, etc."
