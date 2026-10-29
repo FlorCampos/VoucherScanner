@@ -1,9 +1,39 @@
 from unittest.mock import MagicMock
 
 import pytest
+from cryptography.hazmat.primitives import serialization
+from cryptography.hazmat.primitives.asymmetric import rsa
 from pydantic import ValidationError
 
-from app import GEMINI_MODEL, Voucher, extraer_datos_voucher
+from app import GEMINI_MODEL, Voucher, _normalize_private_key, extraer_datos_voucher
+
+
+@pytest.fixture(scope="module")
+def sample_pem() -> str:
+    """PEM desechable generado en memoria, nunca una credencial real."""
+    key = rsa.generate_private_key(public_exponent=65537, key_size=2048)
+    return key.private_bytes(
+        encoding=serialization.Encoding.PEM,
+        format=serialization.PrivateFormat.PKCS8,
+        encryption_algorithm=serialization.NoEncryption(),
+    ).decode()
+
+
+@pytest.mark.parametrize(
+    "mangle",
+    [
+        lambda pem: pem,
+        lambda pem: pem.replace("\n", "\\n"),
+        lambda pem: pem.replace("\n", ""),
+        lambda pem: pem.replace("\n", "\r\n"),
+        lambda pem: pem.replace("\n", "\n   "),
+    ],
+    ids=["intacto", "con \\n literal", "sin saltos de línea", "CRLF", "indentado"],
+)
+def test_normalize_private_key_recupera_pem_valido(sample_pem, mangle):
+    mangled = mangle(sample_pem)
+    normalized = _normalize_private_key(mangled)
+    serialization.load_pem_private_key(normalized.encode(), password=None)
 
 
 def test_voucher_schema_accepts_valid_payload():

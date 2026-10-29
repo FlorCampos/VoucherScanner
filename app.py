@@ -1,5 +1,6 @@
 import json
 import logging
+import re
 
 import gspread
 import streamlit as st
@@ -44,8 +45,37 @@ def get_gemini_client() -> genai.Client:
     return genai.Client(api_key=st.secrets["GEMINI_KEY"])
 
 
+_PEM_HEADER = "-----BEGIN PRIVATE KEY-----"
+_PEM_FOOTER = "-----END PRIVATE KEY-----"
+_PEM_BLOCK_RE = re.compile(
+    re.escape(_PEM_HEADER) + r"(.*?)" + re.escape(_PEM_FOOTER), re.DOTALL
+)
+
+
+def _normalize_private_key(private_key: str) -> str:
+    """Reconstruye un PEM canónico a partir de una clave potencialmente mal
+    formateada por el copiado/pegado en secrets.toml (saltos de línea
+    perdidos, "\\n" literales, CRLF, espacios de indentación, etc.)."""
+    key = private_key.replace("\\n", "\n").replace("\r\n", "\n").replace("\r", "\n")
+    match = _PEM_BLOCK_RE.search(key)
+    if not match:
+        return key
+    body = "".join(match.group(1).split())
+    wrapped_body = "\n".join(body[i : i + 64] for i in range(0, len(body), 64))
+    return f"{_PEM_HEADER}\n{wrapped_body}\n{_PEM_FOOTER}\n"
+
+
 def get_sheets_client() -> gspread.Client:
-    creds_dict = json.loads(st.secrets["GOOGLE_CREDENTIALS"])
+    raw_creds = st.secrets["GOOGLE_CREDENTIALS"]
+    if isinstance(raw_creds, str):
+        creds_dict = json.loads(raw_creds)
+    else:
+        creds_dict = dict(raw_creds)
+
+    private_key = creds_dict.get("private_key")
+    if isinstance(private_key, str):
+        creds_dict["private_key"] = _normalize_private_key(private_key)
+
     return gspread.service_account_from_dict(creds_dict, scopes=SHEETS_SCOPES)
 
 
@@ -97,7 +127,13 @@ def main() -> None:
     if not foto:
         return
 
-    img = Image.open(foto)
+    try:
+        img = Image.open(foto)
+    except Exception:
+        logger.exception("Archivo subido no es una imagen válida")
+        st.error("⚠️ El archivo no parece ser una imagen válida. Sube un JPG o PNG.")
+        return
+
     st.image(img, caption="Imagen lista para procesar", use_container_width=True)
 
     if not st.button("🚀 Procesar y Guardar"):
@@ -114,6 +150,14 @@ def main() -> None:
         except ValueError as exc:
             logger.exception("Respuesta de Gemini fuera de esquema")
             st.error(f"⚠️ {exc} Intenta con una foto más clara o nítida.")
+            return
+        except KeyError:
+            logger.exception("Falta el secreto GEMINI_KEY")
+            st.error("⚠️ No se configuró la API key de Gemini en los secretos de la app.")
+            return
+        except Exception:
+            logger.exception("Error inesperado al llamar a Gemini")
+            st.error("⚠️ Ocurrió un error inesperado al leer el voucher. Intenta de nuevo.")
             return
 
         st.json(voucher.model_dump())
@@ -142,6 +186,10 @@ def main() -> None:
                 "⚠️ Las credenciales de Google Sheets no están configuradas "
                 "correctamente en los secretos de la app."
             )
+            return
+        except Exception:
+            logger.exception("Error inesperado al guardar en Google Sheets")
+            st.error("⚠️ Ocurrió un error inesperado al guardar en Google Sheets.")
             return
 
         st.success("✅ ¡Datos guardados correctamente en Google Sheets!")
