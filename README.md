@@ -1,47 +1,56 @@
 # 📸 Voucher Scanner
 
-Aplicación en Streamlit que captura o sube una foto de un voucher/ticket, extrae sus datos con **Gemini 2.5 Flash** (visión + structured outputs) y los registra automáticamente en una hoja de **Google Sheets**.
+Streamlit app that captures or uploads a photo of a voucher/receipt, extracts its data with **Gemini 2.5 Flash** (vision + structured outputs), and automatically logs it to a **Google Sheets** spreadsheet.
 
-## Arquitectura (Fase 1)
+## Architecture (Phase 1)
 
 ```
-Imagen (cámara / upload)
+Image (camera / upload)
         │
         ▼
 Gemini 2.5 Flash  ──  response_schema = Voucher (Pydantic)
         │
         ▼
-Voucher (objeto validado)
+Voucher (validated object)
         │
         ▼
 Google Sheets (gspread + google-auth)
 ```
 
-- **OCR/Extracción**: `google-genai`, modelo `gemini-2.5-flash`, con `response_mime_type="application/json"` y `response_schema=Voucher`. El modelo está forzado a devolver un JSON que cumple el esquema Pydantic `Voucher`; si no lo cumple, `response.parsed` es `None` y la app lo trata como un error explícito (no se parsea texto a mano).
-- **Persistencia**: `gspread.service_account_from_dict(...)`, autenticado con `google-auth` (no `oauth2client`, que está deprecado).
-- **Secretos**: gestionados exclusivamente vía `st.secrets` (Streamlit secrets), nunca archivos en disco.
+- **OCR/Extraction**: `google-genai`, model `gemini-2.5-flash`, with `response_mime_type="application/json"` and `response_schema=Voucher`. The model is forced to return JSON that satisfies the `Voucher` Pydantic schema; if it doesn't, `response.parsed` is `None` and the app treats it as an explicit error (no manual text parsing).
+- **Persistence**: `gspread.service_account_from_dict(...)`, authenticated with `google-auth` (not `oauth2client`, which is deprecated).
+- **Secrets**: managed exclusively via `st.secrets` (Streamlit secrets), never files on disk.
 
-## Setup local
+## Local setup
 
-1. Crear y activar un entorno virtual:
+1. Create and activate a virtual environment:
    ```bash
    python3 -m venv venv
    source venv/bin/activate
    ```
-2. Instalar dependencias:
+2. Install dependencies:
    ```bash
    pip install -r requirements.txt
-   # para correr tests:
+   # to run tests:
    pip install -r requirements-dev.txt
    ```
-3. Crear `.streamlit/secrets.toml` (este archivo está en `.gitignore`, nunca se commitea):
+3. Create `.streamlit/secrets.toml` (this file is in `.gitignore`, never committed). You can store `GOOGLE_CREDENTIALS` either as a TOML table or as a raw JSON string:
    ```toml
-   GEMINI_KEY = "tu-api-key-de-gemini"
-   GOOGLE_CREDENTIALS = '''{"type": "service_account", "project_id": "...", ...}'''
+   GEMINI_KEY = "your-gemini-api-key"
+
+   [GOOGLE_CREDENTIALS]
+   type = "service_account"
+   project_id = "..."
+   private_key = """-----BEGIN PRIVATE KEY-----
+   ...
+   -----END PRIVATE KEY-----"""
+   client_email = "..."
+   token_uri = "https://oauth2.googleapis.com/token"
+   # ...remaining fields from the downloaded JSON key
    ```
-   - `GEMINI_KEY`: API key de [Google AI Studio](https://aistudio.google.com/).
-   - `GOOGLE_CREDENTIALS`: el JSON completo de una service account de Google Cloud (como string), con acceso de **Editor** a la hoja de cálculo destino (compartir la hoja con el `client_email` de la service account).
-4. Ejecutar la app:
+   - `GEMINI_KEY`: API key from [Google AI Studio](https://aistudio.google.com/).
+   - `GOOGLE_CREDENTIALS`: the full Google Cloud service account JSON, with **Editor** access to the target spreadsheet (share the sheet with the service account's `client_email`). Paste the downloaded JSON file's values as-is — avoid retyping the `private_key` by hand, since a single dropped or altered character breaks the PEM.
+4. Run the app:
    ```bash
    streamlit run app.py
    ```
@@ -52,16 +61,16 @@ Google Sheets (gspread + google-auth)
 pytest tests/ -v
 ```
 
-Cubren el esquema `Voucher` (validación de campos requeridos/tipos) y la función `extraer_datos_voucher` (mockeando el cliente de Gemini, sin llamadas reales a la API).
+Covers the `Voucher` schema (required fields/type validation) and the `extraer_datos_voucher` function (mocking the Gemini client, no real API calls).
 
-## Seguridad
+## Security
 
-- Ningún secreto vive en el repositorio. `credentials.json` y `.streamlit/secrets.toml` están excluidos vía `.gitignore`.
-- Si una clave de service account llega a exponerse en disco o en un commit, **rotarla de inmediato** desde Google Cloud Console (IAM → Service Accounts → Keys), sin esperar confirmación de que haya sido filtrada.
+- No secret lives in the repository. `credentials.json` and `.streamlit/secrets.toml` are excluded via `.gitignore`.
+- If a service account key is ever exposed on disk or in a commit, **rotate it immediately** from Google Cloud Console (IAM → Service Accounts → Keys) — don't wait for confirmation that it was actually leaked.
 
-## Roadmap (próximas fases)
+## Roadmap (upcoming phases)
 
-- **Fase 2 — Robustez**: reintentos con backoff ante errores transitorios de la API de Gemini; límite de tamaño/validación de imágenes antes de enviarlas al modelo; manejo de rate limiting.
-- **Fase 3 — Observabilidad**: logging estructurado (JSON) enviado a un sistema externo (p. ej. Cloud Logging) en vez de solo `st.error`; métricas de tasa de éxito de extracción.
-- **Fase 4 — Escalabilidad de datos**: migrar de Google Sheets a una base de datos (Postgres/SQLite) detrás de una capa de servicio, manteniendo Sheets como vista/export opcional.
-- **Fase 5 — Multiusuario**: autenticación de usuarios en la app y separación de hojas/registros por usuario.
+- **Phase 2 — Robustness**: retries with backoff for transient Gemini API errors; image size/validation limits before sending to the model; rate-limit handling.
+- **Phase 3 — Observability**: structured (JSON) logging sent to an external system (e.g. Cloud Logging) instead of just `st.error`; extraction success-rate metrics.
+- **Phase 4 — Data scalability**: migrate from Google Sheets to a database (Postgres/SQLite) behind a service layer, keeping Sheets as an optional view/export.
+- **Phase 5 — Multi-user**: user authentication in the app and per-user sheet/record separation.
