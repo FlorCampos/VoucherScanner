@@ -1,0 +1,13 @@
+# Entornos virtuales
+venv/
+__pycache__/
+*.pyc
+
+# Secretos y credenciales
+credentials.json
+.streamlit/secrets.toml
+.env
+
+# Artefactos de Office/OS
+~$*.xlsx
+.DS_Store
